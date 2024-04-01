@@ -1,7 +1,7 @@
 """
 Author:     Daniel van Rhijn
 Created:    19/03/2024
-Updated:    20/03/2024
+Updated:    30/03/2024
 Purpose:    Use MPI to execute the A-Priori Algorithm in parallel
 
 Stages:
@@ -15,7 +15,7 @@ Stages:
 
 Improvements:
     1. Use numpy arrays throughout the whole algorithm rather than lists. Saves converting back and forth constantly
-    2. Consider speedup by doing redundant calculations on each node rather than communicating more(Implement allreduce, etc.)
+    2. Consider making interest above 0.5 be a criteria for defining an association rule
 
 CRITICAL NOTES:
     1. There is a hard coded limit for association sizes to 100. If sizes larger than this are expected adjust the limiter. Consider
@@ -187,6 +187,122 @@ def get_counts(candidates, data):
     
     return counts
 
+def serial_associations(frequent_items, support_values):
+    """
+    Purpose:
+        Prototype method for determining the actual association rules from the frequent itemsets
+    
+    Inputs:
+        frequent_items - 3D array containing sets of items that are frequent
+        support_vales - 2D array containing support values for each set
+    
+    Outputs:
+        associations - Array of associations that have sufficiently high confidence
+    """
+    associations = [[] for i in range(len(frequent_items) - 1)]
+
+    for k in range(1, len(frequent_items)):
+    #For each layer
+        for n in range(len(frequent_items[k])):
+            #For each item
+            for q in range(len(frequent_items[k][n])):
+                #For each subset of that item
+                subset = frequent_items[k][n][0:q] + frequent_items[k][n][q+1:k+1]
+
+                #Determine confidence in the association
+                confidence = support_values[k][n] / support_values[k-1][frequent_items[k-1].index(subset)]
+                if confidence >= 0.5:
+                    associations[k-1].append((subset, frequent_items[k][n][q], float("%.2f" % confidence)))
+
+    return associations
+
+def get_permutations(base, val_list, max_len):
+    """
+    Purpose:
+        Recursively get all permutations of given list up to the defined size limit
+    
+    Inputs:
+        base - Section of the list to add values to to create new permutations
+        list - Values available to add to base
+        max_len - Maximum lengths the permutations should reach
+    
+    Returns:
+        permutations - Python list of all permutations up to the size cap
+    """
+    permutations = []
+
+    for x in range(len(val_list)):
+        temp = base + [val_list[x]]
+        permutations.append(temp)
+        if len(temp) != max_len:
+            permutations+=get_permutations(temp, val_list[x+1:], max_len)
+    
+    return permutations
+
+def partial_parallel(frequent_items, support_values, chunks):
+    """
+    Purpose:
+        Determine the association rules in the frequent_items specified by chunks
+    
+    Inputs:
+        frequent_items - 3D array containing sets of items that are frequent
+        support_vales - 2D array containing support values for each set
+        chunks - 2D python list containing start and stop indexes indicating which
+                 part of frequent_items to check.
+    
+    Outputs:
+        associations - Array of associations that have sufficiently high confidence and interest
+    """
+    associations = [[] for i in range(len(frequent_items) - 1)]
+
+    for k in range(1, len(frequent_items)):
+    #For each layer
+        for n in range(chunks[k][0], chunks[k][1]):
+            #For each item
+            for q in range(len(frequent_items[k][n])):
+                #For each subset of that item
+                subset = frequent_items[k][n][0:q] + frequent_items[k][n][q+1:k+1]
+
+                #Determine confidence in the association
+                confidence = support_values[k][n] / support_values[k-1][frequent_items[k-1].index(subset)]
+                interest = confidence - support_values[k-1][frequent_items[k-1].index(subset)]
+                if confidence >= 0.5 and abs(interest) >= 0.5:
+                    associations[k-1].append((subset, [frequent_items[k][n][q]], float("%.2f" % confidence), float("%.2f" % interest)))
+
+    return associations
+
+def parallel_associations(frequent_items, support_values, chunks):
+    """
+    Purpose:
+        Determine the association rules in the frequent_items specified by chunks
+    
+    Inputs:
+        frequent_items - 3D array containing sets of items that are frequent
+        support_vales - 2D array containing support values for each set
+        chunks - 2D python list containing start and stop indexes indicating which
+                 part of frequent_items to check.
+    
+    Outputs:
+        associations - Array of associations that have sufficiently high confidence and interest
+    """
+    associations = [[] for i in range(len(frequent_items) - 1)]
+
+
+    for k in range(1, len(frequent_items)):
+    #For each layer
+        for n in range(chunks[k][0], chunks[k][1]):
+            #For each item
+            permutations = get_permutations([], frequent_items[k][n], len(frequent_items[k][n])-1)
+            for subset in permutations:
+
+                #Determine confidence in the association
+                confidence = support_values[k][n] / support_values[len(subset)-1][frequent_items[len(subset)-1].index(subset)]
+                interest = confidence - support_values[len(subset)-1][frequent_items[len(subset)-1].index(subset)]
+                if confidence >= 0.5 and abs(interest) >= 0.25:
+                    associations[k-1].append((subset, list(set(frequent_items[k][n]) - set(subset)), float("%.2f" % confidence), float("%.2f" % interest)))
+
+    return associations
+
 def apriori(fp, mins):
     """
     Purpose:
@@ -199,6 +315,7 @@ def apriori(fp, mins):
         frequent_items - 3D Python List containing associations rules of various sizes
         support_values - 2D Python List containing support values for each association
         categories - List of feature names that make up the dataset
+        associations - 2D list of association rules that have high enough confidence and interest
     """
 
     #Initialize MPI4py variables
@@ -206,38 +323,32 @@ def apriori(fp, mins):
     rank = comm.Get_rank()
     size = comm.Get_size()
 
-
     #Define variables for data division
     start_index = 0
     end_index = 0
     chunks = []
     
-
     if rank == 0:
         #Initialize constant values in the root process
         input_file = fp
         support_values = [[]]
         frequent_items = [[]]
 
-
         #Import the data and category names into lists
         data, categories = import_data(input_file)
         m = len(data)
 
-
         #Divide the data into chunks for distribution
         for i in range(size):
-            if (rank < len(data)%size):
+            if (i < len(data)%size):
                 end_index = start_index + math.floor(len(data)/size) + 1
             else:
                 end_index = start_index + math.floor(len(data)/size)
             chunks.append(data[start_index:end_index])
             start_index = end_index
-        
-
+    
     #Distribute chunks among all processes
     chunks = comm.scatter(chunks, root=0)
-
 
     #Get counts for the first layer of items
     counts = get_counts_initial(chunks)
@@ -290,11 +401,43 @@ def apriori(fp, mins):
         k+=1
         if k == 100 or (len(candidates) == 0):
             termination = True
+    
+    #Determine chunks of the frequent_items to be passed to each process
+    if rank == 0:
+        chunks = [[] for i in range(size)]
+        for layer in frequent_items:
+            end_index = 0
+            start_index = 0
+            for i in range(size):
+                if (i < len(layer)%size):
+                    end_index = start_index + math.floor(len(layer)/size) + 1
+                else:
+                    end_index = start_index + math.floor(len(layer)/size)
+                
+                chunks[i].append((start_index, end_index))
+                start_index = end_index
+    
+    #Distribute the required information for finding the associations
+    if rank != 0:
+        frequent_items = []
+        support_values = []
+    chunks = comm.scatter(chunks, root=0)
+    frequent_items = comm.bcast(frequent_items, root=0)
+    support_values = comm.bcast(support_values, root=0)
+    
+    associations = parallel_associations(frequent_items, support_values, chunks)
+
+    #Gather the computed associations
+    temp = []
+    temp = comm.gather(associations, root = 0)
+    if rank == 0:
+        associations = []
+        for i in range(len(temp[0])):
+            associations.append([])
+            for j in range(len(temp)):
+                associations[i]+=temp[j][i]
 
     if rank == 0:
-        return frequent_items, support_values, categories
+        return frequent_items, support_values, categories, associations
     
     return
-    
-    
-    
