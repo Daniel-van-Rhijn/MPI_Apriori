@@ -1,7 +1,7 @@
 """
 Author:     Daniel van Rhijn
 Created:    19/03/2024
-Updated:    30/03/2024
+Updated:    06/04/2024
 Purpose:    Use MPI to execute the A-Priori Algorithm in parallel
 
 Stages:
@@ -12,10 +12,6 @@ Stages:
     4. Root process sends new round of candidates to each process.
     5. Processes count occurences of candidates and return results to the root process.
     4. Repeat until no new candidates are found to be checked
-
-Improvements:
-    1. Use numpy arrays throughout the whole algorithm rather than lists. Saves converting back and forth constantly
-    2. Consider making interest above 0.5 be a criteria for defining an association rule
 
 CRITICAL NOTES:
     1. There is a hard coded limit for association sizes to 100. If sizes larger than this are expected adjust the limiter. Consider
@@ -34,32 +30,39 @@ def import_data(fp):
     Inputs:
         fp - Path of a CSV file containing the dataset to be imported
     Returns:
-        data - Python 2D List of 
+        data - Python 2D List of data items
+        categories - Python dictionary with unique items in the data as index
+                     names. All values are initialized to 0.
     """
 
     df = pd.read_csv(fp)
+
+    #Convert the data and category names to list format
     data = df.values.tolist()
-    categories = df.columns.tolist()
+    categories = {}
+    for col in df:
+        for item in df[col].unique():
+            categories[str(item)] = 0
+
+    #Get all possible occurences 
 
     return data, categories
 
-def get_counts_initial(data):
+def get_counts_initial(data, counts):
     """
     Purpose:
         Count the amount of times each value is true in a binary dataset.
     Inputs:
         data - 2D Python list containing instances composed of boolean values
     Returns:
-        counts - Python List containing integer values representing the number of
-                 positive occurences of each feature in the data.
+        counts - Python dictionary containing integer values representing the number of
+                 occurences of each item in the data.
     """
-    counts = [0] * len(data[0])
     for basket in data:
-        for n in range(len(basket)):
-            if basket[n] == 1:
-                counts[n]+=1
+        for item in basket:
+            counts[str(item)]+=1
 
-    return counts
+    return
 
 def check_frequent(candidates, counts, m, mins):
     """
@@ -68,28 +71,25 @@ def check_frequent(candidates, counts, m, mins):
         considered frequent items
     Inputs:
         candidates - A list of candidate association rules to check
-        counts - A list of occurences of each candidate in the dataset
+        counts - A dictionary of occurences of each candidate in the dataset
         m - Total amount of instances/baskets analyzed
         mins - Minimum support value for a candidate to be considered
     Returns:
-        support_values - Python list of support values for each candidate
-        support_frequent - Python list containing support values of frequent itemsss
+        support_frequent - Python dictionary support values of frequent items
+        frequent_items - Python list containing lists of frequent itemsets
     """
 
     #Initialize needed data structures to return
-    support_values = [0] * len(counts)
-    support_frequent = []
+    support_values = {}
+    support_frequent = {}
     frequent_items = []
 
     #Determine support value for each candidate item
-    for n in range(len(support_values)):
-        support_values[n] = float("{:.2f}".format(counts[n] / m))
-    
-    #Add the candidates with high enough support values to the frequent_items array
-    for n in range(len(support_values)):
-        if support_values[n] >= mins:
-            frequent_items.append(candidates[n])
-            support_frequent.append(support_values[n])
+    for item_set in candidates:
+        support_values[str(item_set)] = float("{:.2f}".format(counts[str(item_set)] / m))
+        if support_values[str(item_set)] >= mins:
+            frequent_items.append(item_set)
+            support_frequent[str(item_set)] = support_values[str(item_set)]
     
     return support_frequent, frequent_items
 
@@ -138,23 +138,21 @@ def generate_candidates_initial(counts, m, mins):
         m - Total amount of instances/baskets analyzed
         mins - Minimum support value for a candidate to be considered
     Returns:
-        data - Python 2D List of 
+        support_frequent - Python dictionary support values of frequent items
+        frequent_items - Python list containing lists of frequent itemsets
     """
 
     #Initialize required data structures
-    support_values = [0] * len(counts)
-    support_frequent = []
+    support_values = {}
+    support_frequent = {}
     frequent_items = []
     
     #Determine support values for each item
-    for n in range(len(support_values)):
-        support_values[n] = float("{:.2f}".format(counts[n] / m))
-    
-    #Add items with a high enough support value to the frequent_items list
-    for n in range(len(support_values)):
-        if support_values[n] >= mins:
-            frequent_items.append([n])
-            support_frequent.append(support_values[n])
+    for item in counts:
+        support_values[str([item])] = float("{:.2f}".format(counts[item] / m))
+        if support_values[str([item])] >= mins:
+            frequent_items.append([item])
+            support_frequent[str([item])] = support_values[str([item])]
     
     return support_frequent, frequent_items
 
@@ -168,53 +166,22 @@ def get_counts(candidates, data):
                      occurences of in the dataset
         data - 2D Python List containing boolean data
     Returns:
-        counts - Python list containing number of occurences of each association
+        counts - Python dictionary containing number of occurences of each association
                  rule in the dataset
     """
 
     #Initialize required data structures
-    counts = [0] * len(candidates)
+    counts = {}
+    for item_set in candidates:
+        counts[str(item_set)] = 0
 
     #Check each association rule against every basket/instance
-    for n in range(len(data)):
-        for j in range(len(candidates)):
-            contains = True
-            for x in candidates[j]:
-                if data[n][x] != 1:
-                    contains = False
-            if contains == True:
-                counts[j]+=1
-    
+    for basket in data:
+        for item_set in candidates:
+            if set(item_set).issubset(set(basket)):
+                counts[str(item_set)]+=1
+
     return counts
-
-def serial_associations(frequent_items, support_values):
-    """
-    Purpose:
-        Prototype method for determining the actual association rules from the frequent itemsets
-    
-    Inputs:
-        frequent_items - 3D array containing sets of items that are frequent
-        support_vales - 2D array containing support values for each set
-    
-    Outputs:
-        associations - Array of associations that have sufficiently high confidence
-    """
-    associations = [[] for i in range(len(frequent_items) - 1)]
-
-    for k in range(1, len(frequent_items)):
-    #For each layer
-        for n in range(len(frequent_items[k])):
-            #For each item
-            for q in range(len(frequent_items[k][n])):
-                #For each subset of that item
-                subset = frequent_items[k][n][0:q] + frequent_items[k][n][q+1:k+1]
-
-                #Determine confidence in the association
-                confidence = support_values[k][n] / support_values[k-1][frequent_items[k-1].index(subset)]
-                if confidence >= 0.5:
-                    associations[k-1].append((subset, frequent_items[k][n][q], float("%.2f" % confidence)))
-
-    return associations
 
 def get_permutations(base, val_list, max_len):
     """
@@ -239,38 +206,6 @@ def get_permutations(base, val_list, max_len):
     
     return permutations
 
-def partial_parallel(frequent_items, support_values, chunks):
-    """
-    Purpose:
-        Determine the association rules in the frequent_items specified by chunks
-    
-    Inputs:
-        frequent_items - 3D array containing sets of items that are frequent
-        support_vales - 2D array containing support values for each set
-        chunks - 2D python list containing start and stop indexes indicating which
-                 part of frequent_items to check.
-    
-    Outputs:
-        associations - Array of associations that have sufficiently high confidence and interest
-    """
-    associations = [[] for i in range(len(frequent_items) - 1)]
-
-    for k in range(1, len(frequent_items)):
-    #For each layer
-        for n in range(chunks[k][0], chunks[k][1]):
-            #For each item
-            for q in range(len(frequent_items[k][n])):
-                #For each subset of that item
-                subset = frequent_items[k][n][0:q] + frequent_items[k][n][q+1:k+1]
-
-                #Determine confidence in the association
-                confidence = support_values[k][n] / support_values[k-1][frequent_items[k-1].index(subset)]
-                interest = confidence - support_values[k-1][frequent_items[k-1].index(subset)]
-                if confidence >= 0.5 and abs(interest) >= 0.5:
-                    associations[k-1].append((subset, [frequent_items[k][n][q]], float("%.2f" % confidence), float("%.2f" % interest)))
-
-    return associations
-
 def parallel_associations(frequent_items, support_values, chunks):
     """
     Purpose:
@@ -278,7 +213,7 @@ def parallel_associations(frequent_items, support_values, chunks):
     
     Inputs:
         frequent_items - 3D array containing sets of items that are frequent
-        support_vales - 2D array containing support values for each set
+        support_vales - Python list of dictionaries containing the support values for frequent items
         chunks - 2D python list containing start and stop indexes indicating which
                  part of frequent_items to check.
     
@@ -290,16 +225,16 @@ def parallel_associations(frequent_items, support_values, chunks):
 
     for k in range(1, len(frequent_items)):
     #For each layer
-        for n in range(chunks[k][0], chunks[k][1]):
+        for item_set in frequent_items[k][chunks[k][0]:chunks[k][1]]:
             #For each item
-            permutations = get_permutations([], frequent_items[k][n], len(frequent_items[k][n])-1)
+            permutations = get_permutations([], item_set, len(item_set)-1)
             for subset in permutations:
 
                 #Determine confidence in the association
-                confidence = support_values[k][n] / support_values[len(subset)-1][frequent_items[len(subset)-1].index(subset)]
-                interest = confidence - support_values[len(subset)-1][frequent_items[len(subset)-1].index(subset)]
-                if confidence >= 0.5 and abs(interest) >= 0.25:
-                    associations[k-1].append((subset, list(set(frequent_items[k][n]) - set(subset)), float("%.2f" % confidence), float("%.2f" % interest)))
+                confidence = support_values[k][str(item_set)] / support_values[len(subset)-1][str(subset)]
+                interest = confidence - support_values[len(subset)-1][str(subset)]
+                if confidence >= 0.5 and abs(interest) >= 0.5:
+                    associations[k-1].append((subset, list(set(item_set) - set(subset)), float("%.2f" % confidence), float("%.2f" % interest)))
 
     return associations
 
@@ -313,8 +248,7 @@ def apriori(fp, mins):
                Intended as a float value between 1 and 0.
     Returns:
         frequent_items - 3D Python List containing associations rules of various sizes
-        support_values - 2D Python List containing support values for each association
-        categories - List of feature names that make up the dataset
+        support_values - Python list of dictionaries containing support values for each association
         associations - 2D list of association rules that have high enough confidence and interest
     """
 
@@ -326,16 +260,17 @@ def apriori(fp, mins):
     #Define variables for data division
     start_index = 0
     end_index = 0
+    counts = {}
     chunks = []
     
     if rank == 0:
         #Initialize constant values in the root process
         input_file = fp
-        support_values = [[]]
-        frequent_items = [[]]
+        support_values = [{}]
+        frequent_items = [{}]
 
         #Import the data and category names into lists
-        data, categories = import_data(input_file)
+        data, counts = import_data(input_file)
         m = len(data)
 
         #Divide the data into chunks for distribution
@@ -349,18 +284,25 @@ def apriori(fp, mins):
     
     #Distribute chunks among all processes
     chunks = comm.scatter(chunks, root=0)
+    
+    #Inform the processes of the counting data structure
+    counts = comm.bcast(counts)
 
     #Get counts for the first layer of items
-    counts = get_counts_initial(chunks)
+    get_counts_initial(chunks, counts)
 
     #Collect each instance of counts back to the root process. Sum all counts together.
     #NOTE: Need to update functionality. Can only reduce properly with numpy arrays. Fix later.
-    counts = np.asarray(counts)
-    counts = comm.reduce(counts, MPI.SUM, root=0)
+    temp = np.asarray(list(counts.values()))
+    temp = comm.reduce(temp, MPI.SUM, root=0)
     if rank == 0:
-        counts = counts.tolist()
+        temp = temp.tolist()
+        i = 0
+        for x in counts:
+            counts[x] = temp[i]
+            i+=1
     else:
-        counts = []
+        counts = None
 
     #Determine the first layer of frequent objects to consider
     if rank == 0:
@@ -384,17 +326,21 @@ def apriori(fp, mins):
             counts = get_counts(candidates, chunks)
 
             #Sum all counts and return them to the root processs
-            counts = np.asarray(counts)
-            counts = comm.reduce(counts, MPI.SUM, root=0)
+            temp = np.asarray(list(counts.values()))
+            temp = comm.reduce(temp, MPI.SUM, root=0)
             if rank == 0:
-                counts = counts.tolist()
+                temp = temp.tolist()
+                i = 0
+                for x in counts:
+                    counts[x] = temp[i]
+                    i+=1
             else:
-                counts = []
+                counts = None
 
             #Determine if any candidates are frequent and add them to the appropriate array
             if rank == 0:
-                support_values.append([])
-                frequent_items.append([])
+                support_values.append({})
+                frequent_items.append({})
                 support_values[k], frequent_items[k] = check_frequent(candidates, counts, m, mins)
         
         #Advance K by 1, exit if no candidates were provided this round
@@ -438,6 +384,6 @@ def apriori(fp, mins):
                 associations[i]+=temp[j][i]
 
     if rank == 0:
-        return frequent_items, support_values, categories, associations
+        return frequent_items, support_values, associations
     
     return

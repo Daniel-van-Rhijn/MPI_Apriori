@@ -1,7 +1,7 @@
 """
 Author: Daniel van Rhijn
 Date: 20/03/2024
-Updated: 30/03/2024
+Updated: 06/04/2024
 Purpose: Output the information gained from the A-Priori Algorithm into a file with understandable formatting
 
 Instructions for use:
@@ -21,8 +21,8 @@ from MPI_Apriori import apriori
 import sys
 
 #Define input_path and mins here, or use command line arguments
-input_path = "/home/weirdsquid/School Files/CP431-Workspace/Term Project/Data Preprocessing/output.csv"
-output_path = "/home/weirdsquid/School Files/CP431-Workspace/Term Project/Version 1.1/output.txt"
+input_path = "/home/weirdsquid/Documents/Datasets/Census Dataset/categorical_adult.data"
+output_path = "/home/weirdsquid/School Files/CP431-Workspace/Term Project/Version 1.2/output.txt"
 mins = 0.25
 
 #Get command line inputs
@@ -36,7 +36,7 @@ else:
 
 #Output the data in a nice format
 if temp != None:
-    frequent_items, support_values, categories, associations = temp
+    frequent_items, support_values, associations = temp
 
     if output_path == "":
         #Output information about frequent itemsets
@@ -53,10 +53,6 @@ if temp != None:
         #Output information about interesting associations
         for layer in associations:
             for rule in layer:
-                for q in range(len(rule[0])):
-                    rule[0][q] = categories[rule[0][q]]
-                for p in range(len(rule[1])):
-                    rule[1][p] = categories[rule[1][p]]
                 print(str(rule[0]) + " --> " + str(rule[1]) + " | Confidence: %.2f | Interest: %.2f" % (rule[2], rule[3]))
             print()
     else:
@@ -76,10 +72,6 @@ if temp != None:
         #Output information about interesting associations
         for layer in associations:
             for rule in layer:
-                for q in range(len(rule[0])):
-                    rule[0][q] = categories[rule[0][q]]
-                for p in range(len(rule[1])):
-                    rule[1][p] = categories[rule[1][p]]
                 f.write(str(rule[0]) + " --> " + str(rule[1]) + " | Confidence: %.2f | Interest: %.2f\n" % (rule[2], rule[3]))
             f.write("\n")
         f.close()
