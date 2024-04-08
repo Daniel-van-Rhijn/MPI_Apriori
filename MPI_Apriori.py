@@ -34,18 +34,22 @@ def import_data(fp):
         categories - Python dictionary with unique items in the data as index
                      names. All values are initialized to 0.
     """
+    #Open file to read input from
+    f = open(fp, 'r')
 
-    df = pd.read_csv(fp)
-
-    #Convert the data and category names to list format
-    data = df.values.tolist()
+    #Define the data structures to return the information in
     categories = {}
-    for col in df:
-        for item in df[col].unique():
-            categories[str(item)] = 0
+    data = []
 
-    #Get all possible occurences 
-
+    #Read lines from the CSV, and add them to the appropriate data structures
+    lines = f.readlines()
+    for line in lines:
+        temp = line.strip().split(sep = ',')
+        data.append(temp)
+        for item in temp:
+            if item not in categories.keys():
+                categories[str(item)] = 0
+    
     return data, categories
 
 def get_counts_initial(data, counts):
@@ -233,7 +237,7 @@ def parallel_associations(frequent_items, support_values, chunks):
                 #Determine confidence in the association
                 confidence = support_values[k][str(item_set)] / support_values[len(subset)-1][str(subset)]
                 interest = confidence - support_values[len(subset)-1][str(subset)]
-                if confidence >= 0.5 and abs(interest) >= 0.5:
+                if confidence >= 0.50 and abs(interest) >= 0.25:
                     associations[k-1].append((subset, list(set(item_set) - set(subset)), float("%.2f" % confidence), float("%.2f" % interest)))
 
     return associations

@@ -22,7 +22,7 @@ import sys
 
 #Define input_path and mins here, or use command line arguments
 input_path = "/home/weirdsquid/Documents/Datasets/Census Dataset/categorical_adult.data"
-output_path = "/home/weirdsquid/School Files/CP431-Workspace/Term Project/Version 1.2/output.txt"
+output_path = "/home/weirdsquid/School Files/CP431-Workspace/Term Project/Version 1.3/output.txt"
 mins = 0.25
 
 #Get command line inputs
