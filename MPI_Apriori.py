@@ -1,7 +1,7 @@
 """
 Author:     Daniel van Rhijn
 Created:    19/03/2024
-Updated:    06/04/2024
+Updated:    07/04/2024
 Purpose:    Use MPI to execute the A-Priori Algorithm in parallel
 
 Stages:
@@ -296,7 +296,6 @@ def apriori(fp, mins):
     get_counts_initial(chunks, counts)
 
     #Collect each instance of counts back to the root process. Sum all counts together.
-    #NOTE: Need to update functionality. Can only reduce properly with numpy arrays. Fix later.
     temp = np.asarray(list(counts.values()))
     temp = comm.reduce(temp, MPI.SUM, root=0)
     if rank == 0:
@@ -316,13 +315,45 @@ def apriori(fp, mins):
     termination = False
     k = 1
     while not termination:
-        #Initialize and share the list of candidates for each process to consider
+        #Determine chunks of frequent_items[k-1] for each processor to use to generate candidates
         if rank == 0:
-            candidates = generate_candidates(frequent_items[k-1], k)
+            candidate_chunks = [[] for i in range(size)]
+            end_index = 0
+            start_index = 0
+            for i in range(size):
+                if (i < len(frequent_items[k-1])%size):
+                    end_index = start_index + math.floor(len(frequent_items[k-1])/size) + 1
+                else:
+                    end_index = start_index + math.floor(len(frequent_items[k-1])/size)
+                
+                candidate_chunks[i].append((start_index, end_index))
+                start_index = end_index
+
+                #Prepare the appropriate layer of frequent items for sharing
+                previous_frequent = frequent_items[k-1]
+        else:
+            #Have the non-root processors prepare for recieving the data
+            candidate_chunks = []
+            previous_frequent = []
+        
+        #Distribute chunks to be considered
+        candidate_chunks = comm.scatter(candidate_chunks, root = 0)
+        previous_frequent = comm.bcast(previous_frequent, root = 0)
+        
+        #Generate candidates list
+        candidates = generate_candidates(previous_frequent, k)
+
+        #Gather the computed candidates
+        temp = []
+        temp = comm.gather(candidates, root = 0)
+        if rank == 0:
+            candidates = []
+            for i in range(len(temp)):
+                candidates = candidates + temp[i]
         else:
             candidates = []
         
-        #Distribute new round of candidate associations to consider
+        #Distribute complete round of candidate itemsets
         candidates = comm.bcast(candidates, root=0)
 
         #If candidates exist for this size then determine associated counts

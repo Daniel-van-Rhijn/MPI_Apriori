@@ -1,8 +1,8 @@
 """
-Author: Daniel van Rhijn
-Date: 20/03/2024
-Updated: 06/04/2024
-Purpose: Output the information gained from the A-Priori Algorithm into a file with understandable formatting
+Author:     Daniel van Rhijn
+Created:    20/03/2024
+Updated:    07/04/2024
+Purpose:    Output the information gained from the A-Priori Algorithm into a file with understandable formatting
 
 Instructions for use:
     To execute using command line arguments use formatting:
@@ -22,7 +22,7 @@ import sys
 
 #Define input_path and mins here, or use command line arguments
 input_path = "/home/weirdsquid/Documents/Datasets/Census Dataset/categorical_adult.data"
-output_path = "/home/weirdsquid/School Files/CP431-Workspace/Term Project/Version 1.3/output.txt"
+output_path = "/home/weirdsquid/School Files/CP431-Workspace/Term Project/Version 1.4/output.txt"
 mins = 0.25
 
 #Get command line inputs
